@@ -39,10 +39,12 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import net.cachapa.expandablelayout.ExpandableLayout
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.net.URI
-import java.util.concurrent.Future
 
 class SignupFragment : Fragment() {
     internal var initialUsername: String? = null
@@ -209,25 +211,25 @@ class SignupDoFragment: DialogFragment() {
 
 class ConfigurationViewModel : ViewModel() {
     val account = MutableLiveData<BaseConfigurationFinder.Configuration>()
-    private var asyncTask: Future<Unit>? = null
+    private var asyncTask: Job? = null
 
     fun signup(context: Context, credentials: SignupCredentials) {
-        asyncTask = doAsync {
-            val httpClient = HttpClient.Builder(context).build().okHttpClient
-            val uri = credentials.uri ?: URI(Constants.etebaseServiceUrl)
-            var etebaseSession: String? = null
-            var exception: Throwable? = null
-            try {
-                val client = Client.create(httpClient, uri.toString())
-                val user = User(credentials.userName, credentials.email)
-                val etebase = Account.signup(client, user, credentials.password)
-                etebaseSession = etebase.save(null)
-            } catch (e: EtebaseException) {
-                exception = e
-            }
+        asyncTask = viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val httpClient = HttpClient.Builder(context).build().okHttpClient
+                val uri = credentials.uri ?: URI(Constants.etebaseServiceUrl)
+                var etebaseSession: String? = null
+                var exception: Throwable? = null
+                try {
+                    val client = Client.create(httpClient, uri.toString())
+                    val user = User(credentials.userName, credentials.email)
+                    val etebase = Account.signup(client, user, credentials.password)
+                    etebaseSession = etebase.save(null)
+                } catch (e: EtebaseException) {
+                    exception = e
+                }
 
-            uiThread {
-                account.value = BaseConfigurationFinder.Configuration(
+                BaseConfigurationFinder.Configuration(
                         uri,
                         credentials.userName,
                         etebaseSession,
@@ -236,26 +238,27 @@ class ConfigurationViewModel : ViewModel() {
                         exception
                 )
             }
+            account.value = result
         }
     }
 
     // We just need it for the migration - maybe merge it with login later on
     fun login(context: Context, credentials: LoginCredentials) {
-        asyncTask = doAsync {
-            val httpClient = HttpClient.Builder(context).build().okHttpClient
-            val uri = credentials.uri ?: URI(Constants.etebaseServiceUrl)
-            var etebaseSession: String? = null
-            var exception: Throwable? = null
-            try {
-                val client = Client.create(httpClient, uri.toString())
-                val etebase = Account.login(client, credentials.userName, credentials.password)
-                etebaseSession = etebase.save(null)
-            } catch (e: EtebaseException) {
-                exception = e
-            }
+        asyncTask = viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val httpClient = HttpClient.Builder(context).build().okHttpClient
+                val uri = credentials.uri ?: URI(Constants.etebaseServiceUrl)
+                var etebaseSession: String? = null
+                var exception: Throwable? = null
+                try {
+                    val client = Client.create(httpClient, uri.toString())
+                    val etebase = Account.login(client, credentials.userName, credentials.password)
+                    etebaseSession = etebase.save(null)
+                } catch (e: EtebaseException) {
+                    exception = e
+                }
 
-            uiThread {
-                account.value = BaseConfigurationFinder.Configuration(
+                BaseConfigurationFinder.Configuration(
                         uri,
                         credentials.userName,
                         etebaseSession,
@@ -264,11 +267,12 @@ class ConfigurationViewModel : ViewModel() {
                         exception
                 )
             }
+            account.value = result
         }
     }
 
     fun cancelLoad() {
-        asyncTask?.cancel(true)
+        asyncTask?.cancel()
     }
 
     fun observe(owner: LifecycleOwner, observer: (BaseConfigurationFinder.Configuration) -> Unit) =

@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.observe
 import at.bitfire.ical4android.TaskProvider.Companion.TASK_PROVIDERS
 import at.bitfire.vcard4android.ContactsStorageException
@@ -57,8 +58,10 @@ import com.etesync.syncadapter.utils.packageInstalled
 import com.google.android.material.snackbar.Snackbar
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.acra.ACRA
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tourguide.tourguide.ToolTip
 import java.util.logging.Level
 
@@ -366,11 +369,11 @@ class AccountActivity : BaseActivity(), Toolbar.OnMenuItemClickListener, PopupMe
         }
 
         fun loadAccount() {
-            doAsync {
-                val info = doLoad()
-                uiThread {
-                    holder.value = info
+            viewModelScope.launch {
+                val info = withContext(Dispatchers.IO) {
+                    doLoad()
                 }
+                holder.value = info
             }
         }
 
@@ -577,29 +580,31 @@ class AccountActivity : BaseActivity(), Toolbar.OnMenuItemClickListener, PopupMe
         val accountManager = AccountManager.get(this)
         val settings = AccountSettings(this@AccountActivity, account)
 
-        doAsync {
-            if (settings.isLegacy) {
-                val authToken = settings.authToken
-                val principal = settings.uri?.toHttpUrlOrNull()
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                if (settings.isLegacy) {
+                    val authToken = settings.authToken
+                    val principal = settings.uri?.toHttpUrlOrNull()
 
-                try {
-                    val httpClient = HttpClient.Builder(this@AccountActivity, null, authToken).build().okHttpClient
-                    val journalAuthenticator = JournalAuthenticator(httpClient, principal!!)
-                    journalAuthenticator.invalidateAuthToken(authToken)
-                } catch (e: Exceptions.HttpException) {
-                    // Ignore failures for now
-                    Logger.log.warning(e.toString())
-                }
-            } else {
-                EtebaseLocalCache.clearUserCache(this@AccountActivity, account.name)
+                    try {
+                        val httpClient = HttpClient.Builder(this@AccountActivity, null, authToken).build().okHttpClient
+                        val journalAuthenticator = JournalAuthenticator(httpClient, principal!!)
+                        journalAuthenticator.invalidateAuthToken(authToken)
+                    } catch (e: Exceptions.HttpException) {
+                        // Ignore failures for now
+                        Logger.log.warning(e.toString())
+                    }
+                } else {
+                    EtebaseLocalCache.clearUserCache(this@AccountActivity, account.name)
 
-                try {
-                    val httpClient = HttpClient.Builder(this@AccountActivity).build()
-                    val etebase = EtebaseLocalCache.getEtebase(this@AccountActivity, httpClient.okHttpClient, settings)
-                    etebase.logout()
-                } catch(e: EtebaseException) {
-                    // Ignore failures for now
-                    Logger.log.warning(e.toString())
+                    try {
+                        val httpClient = HttpClient.Builder(this@AccountActivity).build()
+                        val etebase = EtebaseLocalCache.getEtebase(this@AccountActivity, httpClient.okHttpClient, settings)
+                        etebase.logout()
+                    } catch(e: EtebaseException) {
+                        // Ignore failures for now
+                        Logger.log.warning(e.toString())
+                    }
                 }
             }
         }

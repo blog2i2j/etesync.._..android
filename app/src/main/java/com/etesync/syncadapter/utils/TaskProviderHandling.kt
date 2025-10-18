@@ -9,7 +9,7 @@ import com.etesync.syncadapter.AccountSettings
 import com.etesync.syncadapter.App
 import com.etesync.syncadapter.log.Logger
 import com.etesync.syncadapter.resource.LocalTaskList
-import org.jetbrains.anko.defaultSharedPreferences
+import com.etesync.syncadapter.utils.defaultSharedPreferences
 
 class TaskProviderHandling {
     companion object {

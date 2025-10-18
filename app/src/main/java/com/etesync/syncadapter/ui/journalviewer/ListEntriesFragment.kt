@@ -25,9 +25,11 @@ import com.etesync.syncadapter.R
 import com.etesync.syncadapter.model.*
 import com.etesync.syncadapter.ui.JournalItemActivity
 import com.etesync.syncadapter.ui.ViewCollectionActivity
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
-import java.util.concurrent.Future
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ListEntriesFragment : ListFragment(), AdapterView.OnItemClickListener {
 
@@ -35,7 +37,7 @@ class ListEntriesFragment : ListFragment(), AdapterView.OnItemClickListener {
     private lateinit var account: Account
     private lateinit var info: CollectionInfo
     private var journalEntity: JournalEntity? = null
-    private var asyncTask: Future<Unit>? = null
+    private var asyncTask: Job? = null
 
     private var emptyTextView: TextView? = null
 
@@ -64,17 +66,17 @@ class ListEntriesFragment : ListFragment(), AdapterView.OnItemClickListener {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        asyncTask = doAsync {
-            val entries = loadEntries()
-
-            uiThread {
-                val listAdapter = EntriesListAdapter(requireContext())
-                setListAdapter(listAdapter)
-
-                listAdapter.addAll(entries)
-
-                emptyTextView!!.text = getString(R.string.journal_entries_list_empty)
+        asyncTask = lifecycleScope.launch {
+            val entries = withContext(Dispatchers.IO) {
+                loadEntries()
             }
+
+            val listAdapter = EntriesListAdapter(requireContext())
+            setListAdapter(listAdapter)
+
+            listAdapter.addAll(entries)
+
+            emptyTextView!!.text = getString(R.string.journal_entries_list_empty)
         }
 
         listView.onItemClickListener = this
@@ -83,7 +85,7 @@ class ListEntriesFragment : ListFragment(), AdapterView.OnItemClickListener {
     override fun onDestroyView() {
         super.onDestroyView()
         if (asyncTask != null)
-            asyncTask!!.cancel(true)
+            asyncTask!!.cancel()
     }
 
     override fun onItemClick(parent: AdapterView<*>, view: View, position: Int, id: Long) {

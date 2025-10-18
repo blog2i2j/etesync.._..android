@@ -23,8 +23,10 @@ import com.etesync.syncadapter.R
 import com.etesync.syncadapter.log.Logger
 import com.etesync.syncadapter.ui.DebugInfoActivity
 import com.etesync.syncadapter.ui.setup.BaseConfigurationFinder.Configuration
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class DetectConfigurationFragment : DialogFragment() {
 
@@ -49,11 +51,11 @@ class DetectConfigurationFragment : DialogFragment() {
     }
 
     private fun findConfiguration(credentials: LoginCredentials) {
-        doAsync {
-            val data = BaseConfigurationFinder(requireContext(), credentials).findInitialConfiguration()
-            uiThread {
-                onLoadFinished(data)
+        lifecycleScope.launch {
+            val data = withContext(Dispatchers.IO) {
+                BaseConfigurationFinder(requireContext(), credentials).findInitialConfiguration()
             }
+            onLoadFinished(data)
         }
     }
 

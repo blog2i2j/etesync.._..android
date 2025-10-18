@@ -39,8 +39,10 @@ import net.cachapa.expandablelayout.ExpandableLayout
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import okhttp3.RequestBody
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.StringReader
 import java.net.URI
 import java.util.*
@@ -254,35 +256,35 @@ class SignupDoFragment : DialogFragment() {
         if (savedInstanceState == null) {
             val settings = AccountSettings(requireContext(), accountV1)
             // Mark the etesync v1 account as wanting migration
-            doAsync {
-                val httpClient = HttpClient.Builder(context, settings).setForeground(true).build().okHttpClient
-                val remote = settings.uri!!.toHttpUrlOrNull()!!.newBuilder()
-                        .addPathSegments("etesync-v2/confirm-migration/")
-                        .build()
+            lifecycleScope.launch {
+                val response = withContext(Dispatchers.IO) {
+                    val httpClient = HttpClient.Builder(context, settings).setForeground(true).build().okHttpClient
+                    val remote = settings.uri!!.toHttpUrlOrNull()!!.newBuilder()
+                            .addPathSegments("etesync-v2/confirm-migration/")
+                            .build()
 
-                val body = RequestBody.create(null, byteArrayOf())
+                    val body = RequestBody.create(null, byteArrayOf())
 
-                val request = Request.Builder()
-                        .post(body)
-                        .url(remote)
-                        .build()
+                    val request = Request.Builder()
+                            .post(body)
+                            .url(remote)
+                            .build()
 
-                val response = httpClient.newCall(request).execute()
-                uiThread {
-                    if (context == null) {
-                        dismissAllowingStateLoss()
-                        return@uiThread
-                    }
-                    if (response.isSuccessful) {
-                        model.signup(requireContext(), signupCredentials)
+                    httpClient.newCall(request).execute()
+                }
+                if (context == null) {
+                    dismissAllowingStateLoss()
+                    return@launch
+                }
+                if (response.isSuccessful) {
+                    model.signup(requireContext(), signupCredentials)
+                } else {
+                    if (response.code == 400) {
+                        reportErrorHelper(requireContext(), Error("User already migrated. Please login instead."))
                     } else {
-                        if (response.code == 400) {
-                            reportErrorHelper(requireContext(), Error("User already migrated. Please login instead."))
-                        } else {
-                            reportErrorHelper(requireContext(), Error("Failed preparing account for migration"))
-                        }
-                        dismissAllowingStateLoss()
+                        reportErrorHelper(requireContext(), Error("Failed preparing account for migration"))
                     }
+                    dismissAllowingStateLoss()
                 }
             }
             model.observe(this) {
@@ -290,17 +292,17 @@ class SignupDoFragment : DialogFragment() {
                     reportErrorHelper(requireContext(), it.error!!)
                     dismissAllowingStateLoss()
                 } else {
-                    doAsync {
-                        val httpClient = HttpClient.Builder(context).setForeground(true).build().okHttpClient
-                        val client = Client.create(httpClient, it.url.toString())
-                        val etebase = EtebaseAccount.restore(client, it.etebaseSession!!, null)
-                        uiThread {
-                            fragmentManager?.commit {
-                                replace(R.id.fragment_container, WizardCollectionsFragment.newInstance(accountV1, etebase))
-                                addToBackStack(null)
-                            }
-                            dismissAllowingStateLoss()
+                    lifecycleScope.launch {
+                        val etebase = withContext(Dispatchers.IO) {
+                            val httpClient = HttpClient.Builder(context).setForeground(true).build().okHttpClient
+                            val client = Client.create(httpClient, it.url.toString())
+                            EtebaseAccount.restore(client, it.etebaseSession!!, null)
                         }
+                        fragmentManager?.commit {
+                            replace(R.id.fragment_container, WizardCollectionsFragment.newInstance(accountV1, etebase))
+                            addToBackStack(null)
+                        }
+                        dismissAllowingStateLoss()
                     }
                 } }
         }
@@ -435,17 +437,17 @@ class LoginDoFragment() : DialogFragment() {
                     reportErrorHelper(requireContext(), it.error!!)
                     dismissAllowingStateLoss()
                 } else {
-                    doAsync {
-                        val httpClient = HttpClient.Builder(context).setForeground(true).build().okHttpClient
-                        val client = Client.create(httpClient, it.url.toString())
-                        val etebase = EtebaseAccount.restore(client, it.etebaseSession!!, null)
-                        uiThread {
-                            fragmentManager?.commit {
-                                replace(R.id.fragment_container, WizardCollectionsFragment.newInstance(accountV1, etebase))
-                                addToBackStack(null)
-                            }
-                            dismissAllowingStateLoss()
+                    lifecycleScope.launch {
+                        val etebase = withContext(Dispatchers.IO) {
+                            val httpClient = HttpClient.Builder(context).setForeground(true).build().okHttpClient
+                            val client = Client.create(httpClient, it.url.toString())
+                            EtebaseAccount.restore(client, it.etebaseSession!!, null)
                         }
+                        fragmentManager?.commit {
+                            replace(R.id.fragment_container, WizardCollectionsFragment.newInstance(accountV1, etebase))
+                            addToBackStack(null)
+                        }
+                        dismissAllowingStateLoss()
                     }
                 } }
         }
@@ -499,92 +501,90 @@ class WizardCollectionsFragment() : Fragment() {
         val data = (requireContext().applicationContext as App).data
 
         loadingModel.setLoading(true)
-        doAsync {
+        lifecycleScope.launch {
             try {
-                for (serviceEntity in data.select(ServiceEntity::class.java).where(ServiceEntity.ACCOUNT.eq(account.name)).get()) {
-                    val service = serviceEntity.type!!
-                    when (service) {
-                        CollectionInfo.Type.ADDRESS_BOOK -> {
-                            info.carddav = AccountActivity.AccountInfo.ServiceInfo()
-                            info.carddav!!.infos = getLegacyJournals(data, serviceEntity)
+                withContext(Dispatchers.IO) {
+                    for (serviceEntity in data.select(ServiceEntity::class.java).where(ServiceEntity.ACCOUNT.eq(account.name)).get()) {
+                        val service = serviceEntity.type!!
+                        when (service) {
+                            CollectionInfo.Type.ADDRESS_BOOK -> {
+                                info.carddav = AccountActivity.AccountInfo.ServiceInfo()
+                                info.carddav!!.infos = getLegacyJournals(data, serviceEntity)
 
-                            val accountManager = AccountManager.get(context)
-                            for (addrBookAccount in accountManager.getAccountsByType(App.addressBookAccountType)) {
-                                val addressBook = LocalAddressBook(requireContext(), addrBookAccount, null)
-                                try {
-                                    if (account == addressBook.mainAccount)
-                                        info.carddav!!.refreshing = info.carddav!!.refreshing or ContentResolver.isSyncActive(addrBookAccount, ContactsContract.AUTHORITY)
-                                } catch (e: ContactsStorageException) {
+                                val accountManager = AccountManager.get(context)
+                                for (addrBookAccount in accountManager.getAccountsByType(App.addressBookAccountType)) {
+                                    val addressBook = LocalAddressBook(requireContext(), addrBookAccount, null)
+                                    try {
+                                        if (account == addressBook.mainAccount)
+                                            info.carddav!!.refreshing = info.carddav!!.refreshing or ContentResolver.isSyncActive(addrBookAccount, ContactsContract.AUTHORITY)
+                                    } catch (e: ContactsStorageException) {
+                                    }
+
                                 }
-
                             }
-                        }
-                        CollectionInfo.Type.CALENDAR -> {
-                            info.caldav = AccountActivity.AccountInfo.ServiceInfo()
-                            info.caldav!!.infos = getLegacyJournals(data, serviceEntity)
-                        }
-                        CollectionInfo.Type.TASKS -> {
-                            info.taskdav = AccountActivity.AccountInfo.ServiceInfo()
-                            info.taskdav!!.infos = getLegacyJournals(data, serviceEntity)
+                            CollectionInfo.Type.CALENDAR -> {
+                                info.caldav = AccountActivity.AccountInfo.ServiceInfo()
+                                info.caldav!!.infos = getLegacyJournals(data, serviceEntity)
+                            }
+                            CollectionInfo.Type.TASKS -> {
+                                info.taskdav = AccountActivity.AccountInfo.ServiceInfo()
+                                info.taskdav!!.infos = getLegacyJournals(data, serviceEntity)
+                            }
                         }
                     }
                 }
             } finally {
-                uiThread {
-                    loadingModel.setLoading(false)
+                loadingModel.setLoading(false)
+            }
+
+            if (info.carddav != null) {
+                val infos = info.carddav!!.infos!!
+                val listCardDAV = v.findViewById<View>(R.id.address_books) as ListView
+                val adapter = CollectionListAdapter(requireContext(), account)
+                adapter.addAll(infos)
+                listCardDAV.adapter = adapter
+                listCardDAV.setOnItemClickListener { adapterView, view, i, l ->
+                    val infoItem = infos.get(i)
+                    if (this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)) {
+                        this@WizardCollectionsFragment.migrateJournals.remove(infoItem.uid)
+                    } else {
+                        this@WizardCollectionsFragment.migrateJournals.set(infoItem.uid, infoItem)
+                    }
+                    view.findViewById<CheckBox>(R.id.sync).isChecked = this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)
                 }
             }
 
-            uiThread {
-                if (info.carddav != null) {
-                    val infos = info.carddav!!.infos!!
-                    val listCardDAV = v.findViewById<View>(R.id.address_books) as ListView
-                    val adapter = CollectionListAdapter(requireContext(), account)
-                    adapter.addAll(infos)
-                    listCardDAV.adapter = adapter
-                    listCardDAV.setOnItemClickListener { adapterView, view, i, l ->
-                        val infoItem = infos.get(i)
-                        if (this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)) {
-                            this@WizardCollectionsFragment.migrateJournals.remove(infoItem.uid)
-                        } else {
-                            this@WizardCollectionsFragment.migrateJournals.set(infoItem.uid, infoItem)
-                        }
-                        view.findViewById<CheckBox>(R.id.sync).isChecked = this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)
+            if (info.caldav != null) {
+                val infos = info.caldav!!.infos!!
+                val listCalDAV = v.findViewById<View>(R.id.calendars) as ListView
+                val adapter = CollectionListAdapter(requireContext(), account)
+                adapter.addAll(infos)
+                listCalDAV.adapter = adapter
+                listCalDAV.setOnItemClickListener { adapterView, view, i, l ->
+                    val infoItem = infos.get(i)
+                    if (this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)) {
+                        this@WizardCollectionsFragment.migrateJournals.remove(infoItem.uid)
+                    } else {
+                        this@WizardCollectionsFragment.migrateJournals.set(infoItem.uid, infoItem)
                     }
+                    view.findViewById<CheckBox>(R.id.sync).isChecked = this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)
                 }
+            }
 
-                if (info.caldav != null) {
-                    val infos = info.caldav!!.infos!!
-                    val listCalDAV = v.findViewById<View>(R.id.calendars) as ListView
-                    val adapter = CollectionListAdapter(requireContext(), account)
-                    adapter.addAll(infos)
-                    listCalDAV.adapter = adapter
-                    listCalDAV.setOnItemClickListener { adapterView, view, i, l ->
-                        val infoItem = infos.get(i)
-                        if (this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)) {
-                            this@WizardCollectionsFragment.migrateJournals.remove(infoItem.uid)
-                        } else {
-                            this@WizardCollectionsFragment.migrateJournals.set(infoItem.uid, infoItem)
-                        }
-                        view.findViewById<CheckBox>(R.id.sync).isChecked = this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)
+            if (info.taskdav != null) {
+                val infos = info.taskdav!!.infos!!
+                val listTaskDAV = v.findViewById<View>(R.id.tasklists) as ListView
+                val adapter = CollectionListAdapter(requireContext(), account)
+                adapter.addAll(infos)
+                listTaskDAV.adapter = adapter
+                listTaskDAV.setOnItemClickListener { adapterView, view, i, l ->
+                    val infoItem = infos.get(i)
+                    if (this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)) {
+                        this@WizardCollectionsFragment.migrateJournals.remove(infoItem.uid)
+                    } else {
+                        this@WizardCollectionsFragment.migrateJournals.set(infoItem.uid, infoItem)
                     }
-                }
-
-                if (info.taskdav != null) {
-                    val infos = info.taskdav!!.infos!!
-                    val listTaskDAV = v.findViewById<View>(R.id.tasklists) as ListView
-                    val adapter = CollectionListAdapter(requireContext(), account)
-                    adapter.addAll(infos)
-                    listTaskDAV.adapter = adapter
-                    listTaskDAV.setOnItemClickListener { adapterView, view, i, l ->
-                        val infoItem = infos.get(i)
-                        if (this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)) {
-                            this@WizardCollectionsFragment.migrateJournals.remove(infoItem.uid)
-                        } else {
-                            this@WizardCollectionsFragment.migrateJournals.set(infoItem.uid, infoItem)
-                        }
-                        view.findViewById<CheckBox>(R.id.sync).isChecked = this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)
-                    }
+                    view.findViewById<CheckBox>(R.id.sync).isChecked = this@WizardCollectionsFragment.migrateJournals.contains(infoItem.uid)
                 }
             }
         }
@@ -676,17 +676,18 @@ class MigrateCollectionsDoFragment : DialogFragment() {
 
     private fun migrate() {
         val data = (requireContext().applicationContext as App).data
-        doAsync {
+        lifecycleScope.launch {
             try {
-                val total = migrateJournals.size
-                var malformed = 0
-                var badMtime = 0
-                var i = 1
-                val colMgr = etebase.collectionManager
-                for (itemInfo in migrateJournals.values) {
-                    uiThread {
-                        progress.setMessage(getString(R.string.migrate_v2_wizard_migrate_progress, i, total))
-                    }
+                val malformed = withContext(Dispatchers.IO) {
+                    val total = migrateJournals.size
+                    var malformed = 0
+                    var badMtime = 0
+                    var i = 1
+                    val colMgr = etebase.collectionManager
+                    for (itemInfo in migrateJournals.values) {
+                        withContext(Dispatchers.Main) {
+                            progress.setMessage(getString(R.string.migrate_v2_wizard_migrate_progress, i, total))
+                        }
                     val colType = when (itemInfo.enumType) {
                         CollectionInfo.Type.ADDRESS_BOOK -> Constants.ETEBASE_TYPE_ADDRESS_BOOK
                         CollectionInfo.Type.CALENDAR -> Constants.ETEBASE_TYPE_CALENDAR
@@ -765,7 +766,7 @@ class MigrateCollectionsDoFragment : DialogFragment() {
                         toPush.add(item)
 
                         if (toPush.size == CHUNK_SIZE) {
-                            uiThread {
+                            withContext(Dispatchers.Main) {
                                 progress.setMessage(context?.getString(R.string.migrate_v2_wizard_migrate_progress, i, total) + "\n" +
                                         getString(R.string.migrate_v2_wizard_migrate_progress_entries, itemDone, entries.size))
                             }
@@ -779,31 +780,28 @@ class MigrateCollectionsDoFragment : DialogFragment() {
 
                     i++;
                 }
-
-                uiThread {
-                    var message = getString(R.string.migrate_v2_wizard_migrate_progress_done)
-                    if (malformed > 0) {
-                        message += "\n\n" + getString(R.string.migrate_v2_wizard_migrate_progress_done_malformed, malformed)
-                    }
-                    AlertDialog.Builder(requireContext())
-                            .setIcon(R.drawable.ic_info_dark)
-                            .setTitle(R.string.migrate_v2_wizard_migrate_title)
-                            .setMessage(message)
-                            .setPositiveButton(android.R.string.yes) { _, _ -> }
-                            .setOnDismissListener {
-                                requireFragmentManager().commit {
-                                    replace(android.R.id.content, CreateAccountFragment.newInstance(configurationModel.account.value!!))
-                                    addToBackStack(null)
-                                }
-                                dismissAllowingStateLoss()
+                    malformed
+                }
+                var message = getString(R.string.migrate_v2_wizard_migrate_progress_done)
+                if (malformed > 0) {
+                    message += "\n\n" + getString(R.string.migrate_v2_wizard_migrate_progress_done_malformed, malformed)
+                }
+                AlertDialog.Builder(requireContext())
+                        .setIcon(R.drawable.ic_info_dark)
+                        .setTitle(R.string.migrate_v2_wizard_migrate_title)
+                        .setMessage(message)
+                        .setPositiveButton(android.R.string.yes) { _, _ -> }
+                        .setOnDismissListener {
+                            requireFragmentManager().commit {
+                                replace(android.R.id.content, CreateAccountFragment.newInstance(configurationModel.account.value!!))
+                                addToBackStack(null)
                             }
-                            .show()
-                }
+                            dismissAllowingStateLoss()
+                        }
+                        .show()
             } catch (e: Exception) {
-                uiThread {
-                    reportErrorHelper(requireContext(), e)
-                    dismissAllowingStateLoss()
-                }
+                reportErrorHelper(requireContext(), e)
+                dismissAllowingStateLoss()
             }
         }
     }

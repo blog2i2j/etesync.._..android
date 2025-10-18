@@ -21,10 +21,12 @@ import com.etebase.client.CollectionMember
 import com.etebase.client.FetchOptions
 import com.etesync.syncadapter.CachedCollection
 import com.etesync.syncadapter.R
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.*
-import java.util.concurrent.Future
 
 class CollectionMembersListFragment : ListFragment(), AdapterView.OnItemClickListener {
     private val model: AccountViewModel by activityViewModels()
@@ -121,44 +123,43 @@ class CollectionMembersListFragment : ListFragment(), AdapterView.OnItemClickLis
 
 class CollectionMembersViewModel : ViewModel() {
     private val members = MutableLiveData<List<CollectionMember>>()
-    private var asyncTask: Future<Unit>? = null
+    private var asyncTask: Job? = null
 
     fun loadMembers(accountCollectionHolder: AccountHolder, cachedCollection: CachedCollection) {
-        asyncTask = doAsync {
-            val ret = LinkedList<CollectionMember>()
-            val col = cachedCollection.col
-            val memberManager = accountCollectionHolder.colMgr.getMemberManager(col)
-            var iterator: String? = null
-            var done = false
-            while (!done) {
-                val chunk = memberManager.list(FetchOptions().iterator(iterator).limit(30))
-                iterator = chunk.stoken
-                done = chunk.isDone
+        asyncTask = viewModelScope.launch {
+            val ret = withContext(Dispatchers.IO) {
+                val result = LinkedList<CollectionMember>()
+                val col = cachedCollection.col
+                val memberManager = accountCollectionHolder.colMgr.getMemberManager(col)
+                var iterator: String? = null
+                var done = false
+                while (!done) {
+                    val chunk = memberManager.list(FetchOptions().iterator(iterator).limit(30))
+                    iterator = chunk.stoken
+                    done = chunk.isDone
 
-                ret.addAll(chunk.data)
+                    result.addAll(chunk.data)
+                }
+                result
             }
-
-            uiThread {
-                members.value = ret
-            }
+            members.value = ret
         }
     }
 
     fun removeMember(accountCollectionHolder: AccountHolder, cachedCollection: CachedCollection, username: String) {
-        doAsync {
-            val col = cachedCollection.col
-            val memberManager = accountCollectionHolder.colMgr.getMemberManager(col)
-            memberManager.remove(username)
-            val ret = members.value!!.filter { it.username != username }
-
-            uiThread {
-                members.value = ret
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val col = cachedCollection.col
+                val memberManager = accountCollectionHolder.colMgr.getMemberManager(col)
+                memberManager.remove(username)
             }
+            val ret = members.value!!.filter { it.username != username }
+            members.value = ret
         }
     }
 
     fun cancelLoad() {
-        asyncTask?.cancel(true)
+        asyncTask?.cancel()
     }
 
     fun observe(owner: LifecycleOwner, observer: (List<CollectionMember>) -> Unit) =

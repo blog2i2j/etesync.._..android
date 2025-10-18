@@ -40,11 +40,16 @@ import io.requery.android.sqlite.DatabaseSource
 import io.requery.meta.EntityModel
 import io.requery.sql.EntityDataStore
 import org.acra.ACRA
-import org.jetbrains.anko.doAsync
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.util.*
 
 
 class App : Application() {
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     /**
      * @return [EntityDataStore] single instance for the application.
      *
@@ -79,7 +84,7 @@ class App : Application() {
         loadLanguage()
 
         // don't block UI for some background checks
-        doAsync {
+        applicationScope.launch(Dispatchers.IO) {
             // watch installed/removed apps
             val tasksFilter = IntentFilter()
             tasksFilter.addAction(Intent.ACTION_PACKAGE_ADDED)

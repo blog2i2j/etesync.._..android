@@ -24,8 +24,10 @@ import com.etesync.syncadapter.R
 import com.etesync.syncadapter.resource.LocalCalendar
 import com.etesync.syncadapter.syncadapter.requestSync
 import com.etesync.syncadapter.ui.BaseActivity
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CollectionMembersFragment : Fragment() {
     private val model: AccountViewModel by activityViewModels()
@@ -81,12 +83,14 @@ class CollectionMembersFragment : Fragment() {
             }
         } else {
             v.findViewById<Button>(R.id.leave).setOnClickListener {
-                doAsync {
-                    val membersManager = model.value!!.colMgr.getMemberManager(cachedCollection.col)
-                    membersManager.leave()
-                    val applicationContext = activity?.applicationContext
-                    if (applicationContext != null) {
-                        requestSync(applicationContext, model.value!!.account)
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        val membersManager = model.value!!.colMgr.getMemberManager(cachedCollection.col)
+                        membersManager.leave()
+                        val applicationContext = activity?.applicationContext
+                        if (applicationContext != null) {
+                            requestSync(applicationContext, model.value!!.account)
+                        }
                     }
                     activity?.finish()
                 }
@@ -128,43 +132,43 @@ class AddMemberFragment : DialogFragment() {
         progress.setCanceledOnTouchOutside(false)
         isCancelable = false
 
-        doAsync {
+        lifecycleScope.launch {
             val invitationManager = accountHolder.etebase.invitationManager
             try {
-                val profile = invitationManager.fetchUserProfile(username)
+                val profile = withContext(Dispatchers.IO) {
+                    invitationManager.fetchUserProfile(username)
+                }
                 val fingerprint = Utils.prettyFingerprint(profile.pubkey)
-                uiThread {
-                    val view = LayoutInflater.from(context).inflate(R.layout.fingerprint_alertdialog, null)
-                    (view.findViewById<View>(R.id.body) as TextView).text = getString(R.string.trust_fingerprint_body, username)
-                    (view.findViewById<View>(R.id.fingerprint) as TextView).text = fingerprint
-                    AlertDialog.Builder(requireContext())
-                            .setIcon(R.drawable.ic_fingerprint_dark)
-                            .setTitle(R.string.trust_fingerprint_title)
-                            .setView(view)
-                            .setPositiveButton(android.R.string.ok) { _, _ ->
-                                doAsync {
-                                    try {
+                val view = LayoutInflater.from(context).inflate(R.layout.fingerprint_alertdialog, null)
+                (view.findViewById<View>(R.id.body) as TextView).text = getString(R.string.trust_fingerprint_body, username)
+                (view.findViewById<View>(R.id.fingerprint) as TextView).text = fingerprint
+                AlertDialog.Builder(requireContext())
+                        .setIcon(R.drawable.ic_fingerprint_dark)
+                        .setTitle(R.string.trust_fingerprint_title)
+                        .setView(view)
+                        .setPositiveButton(android.R.string.ok) { _, _ ->
+                            lifecycleScope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
                                         invitationManager.invite(cachedCollection.col, username, profile.pubkey, accessLevel)
-                                        uiThread {
-                                            AlertDialog.Builder(requireContext())
-                                                .setTitle(R.string.collection_members_add)
-                                                .setIcon(R.drawable.ic_account_add_dark)
-                                                .setMessage(R.string.collection_members_add_success)
-                                                .setPositiveButton(android.R.string.yes) { _, _ -> }
-                                                .show()
-                                            dismiss()
-                                        }
-                                    } catch (e: EtebaseException) {
-                                        uiThread { handleError(e.localizedMessage) }
                                     }
+                                    AlertDialog.Builder(requireContext())
+                                        .setTitle(R.string.collection_members_add)
+                                        .setIcon(R.drawable.ic_account_add_dark)
+                                        .setMessage(R.string.collection_members_add_success)
+                                        .setPositiveButton(android.R.string.yes) { _, _ -> }
+                                        .show()
+                                    dismiss()
+                                } catch (e: EtebaseException) {
+                                    handleError(e.localizedMessage)
                                 }
                             }
-                            .setNegativeButton(android.R.string.cancel) { _, _ -> dismiss() }.show()
-                }
+                        }
+                        .setNegativeButton(android.R.string.cancel) { _, _ -> dismiss() }.show()
             } catch (e: NotFoundException) {
-                uiThread { handleError(getString(R.string.collection_members_error_user_not_found, username)) }
+                handleError(getString(R.string.collection_members_error_user_not_found, username))
             } catch (e: EtebaseException) {
-                uiThread { handleError(e.localizedMessage) }
+                handleError(e.localizedMessage)
             }
         }
 

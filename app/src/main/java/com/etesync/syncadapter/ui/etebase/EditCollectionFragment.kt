@@ -20,8 +20,10 @@ import com.etesync.syncadapter.resource.LocalCalendar
 import com.etesync.syncadapter.syncadapter.requestSync
 import com.etesync.syncadapter.ui.BaseActivity
 import org.apache.commons.lang3.StringUtils
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import yuku.ambilwarna.AmbilWarnaDialog
 
 class EditCollectionFragment : Fragment() {
@@ -156,34 +158,32 @@ class EditCollectionFragment : Fragment() {
 
     private fun doDeleteCollection() {
         loadingModel.setLoading(true)
-        doAsync {
+        lifecycleScope.launch {
             try {
-                val col = cachedCollection.col
-                val meta = col.meta
-                meta.mtime = System.currentTimeMillis()
-                col.meta = meta
-                col.delete()
-                uploadCollection(col)
-                val applicationContext = activity?.applicationContext
-                if (applicationContext != null) {
-                    requestSync(applicationContext, model.value!!.account)
+                withContext(Dispatchers.IO) {
+                    val col = cachedCollection.col
+                    val meta = col.meta
+                    meta.mtime = System.currentTimeMillis()
+                    col.meta = meta
+                    col.delete()
+                    uploadCollection(col)
+                    val applicationContext = activity?.applicationContext
+                    if (applicationContext != null) {
+                        requestSync(applicationContext, model.value!!.account)
+                    }
                 }
                 activity?.finish()
             } catch (e: EtebaseException) {
-                uiThread {
-                    Logger.log.warning(e.localizedMessage)
-                    context?.let { context ->
-                        AlertDialog.Builder(context)
-                                .setIcon(R.drawable.ic_info_dark)
-                                .setTitle(R.string.exception)
-                                .setMessage(e.localizedMessage)
-                                .setPositiveButton(android.R.string.yes) { _, _ -> }.show()
-                    }
+                Logger.log.warning(e.localizedMessage)
+                context?.let { context ->
+                    AlertDialog.Builder(context)
+                            .setIcon(R.drawable.ic_info_dark)
+                            .setTitle(R.string.exception)
+                            .setMessage(e.localizedMessage)
+                            .setPositiveButton(android.R.string.yes) { _, _ -> }.show()
                 }
             } finally {
-                uiThread {
-                    loadingModel.setLoading(false)
-                }
+                loadingModel.setLoading(false)
             }
         }
     }
@@ -218,14 +218,16 @@ class EditCollectionFragment : Fragment() {
             }
 
             loadingModel.setLoading(true)
-            doAsync {
+            lifecycleScope.launch {
                 try {
-                    val col = cachedCollection.col
-                    col.meta = meta
-                    uploadCollection(col)
-                    val applicationContext = activity?.applicationContext
-                    if (applicationContext != null) {
-                        requestSync(applicationContext, model.value!!.account)
+                    withContext(Dispatchers.IO) {
+                        val col = cachedCollection.col
+                        col.meta = meta
+                        uploadCollection(col)
+                        val applicationContext = activity?.applicationContext
+                        if (applicationContext != null) {
+                            requestSync(applicationContext, model.value!!.account)
+                        }
                     }
                     if (isCreating) {
                         // Load the items since we just created it
@@ -237,20 +239,16 @@ class EditCollectionFragment : Fragment() {
                         parentFragmentManager.popBackStack()
                     }
                 } catch (e: EtebaseException) {
-                    uiThread {
-                        val context = context
-                        if (context != null) {
-                            AlertDialog.Builder(requireContext())
-                                    .setIcon(R.drawable.ic_info_dark)
-                                    .setTitle(R.string.exception)
-                                    .setMessage(e.localizedMessage)
-                                    .setPositiveButton(android.R.string.yes) { _, _ -> }.show()
-                        }
+                    val context = context
+                    if (context != null) {
+                        AlertDialog.Builder(requireContext())
+                                .setIcon(R.drawable.ic_info_dark)
+                                .setTitle(R.string.exception)
+                                .setMessage(e.localizedMessage)
+                                .setPositiveButton(android.R.string.yes) { _, _ -> }.show()
                     }
                 } finally {
-                    uiThread {
-                        loadingModel.setLoading(false)
-                    }
+                    loadingModel.setLoading(false)
                 }
             }
         }

@@ -33,8 +33,10 @@ import com.etesync.syncadapter.R
 import com.etesync.syncadapter.log.Logger
 import com.etesync.syncadapter.ui.setup.LoginCredentials
 import com.etesync.syncadapter.ui.setup.LoginCredentialsChangeFragment
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AccountSettingsActivity : BaseActivity() {
     private lateinit var account: Account
@@ -96,26 +98,23 @@ class AccountSettingsFragment() : PreferenceFragmentCompat(), LoaderManager.Load
         // Category: dashboard
         val prefManageAccount = findPreference("manage_account")
         prefManageAccount.onPreferenceClickListener = Preference.OnPreferenceClickListener { _ ->
-            doAsync {
+            lifecycleScope.launch {
                 try {
-
-                    val httpClient = HttpClient.Builder(requireContext()).build()
-                    val etebase = EtebaseLocalCache.getEtebase(requireContext(), httpClient.okHttpClient, settings)
-                    val url = etebase.fetchDashboardUrl()
-                    uiThread {
-                        WebViewActivity.openUrl(requireActivity(), url.toUri())
+                    val url = withContext(Dispatchers.IO) {
+                        val httpClient = HttpClient.Builder(requireContext()).build()
+                        val etebase = EtebaseLocalCache.getEtebase(requireContext(), httpClient.okHttpClient, settings)
+                        etebase.fetchDashboardUrl()
                     }
+                    WebViewActivity.openUrl(requireActivity(), url.toUri())
                 } catch (e: EtebaseException) {
-                    uiThread {
-                        val context = context
-                        if (context != null) {
-                            AlertDialog.Builder(context)
-                                    .setIcon(R.drawable.ic_error_dark)
-                                    .setTitle(R.string.exception)
-                                    .setMessage(e.localizedMessage)
-                                    .setPositiveButton(android.R.string.yes) { _, _ -> }
-                                    .show()
-                        }
+                    val context = context
+                    if (context != null) {
+                        AlertDialog.Builder(context)
+                                .setIcon(R.drawable.ic_error_dark)
+                                .setTitle(R.string.exception)
+                                .setMessage(e.localizedMessage)
+                                .setPositiveButton(android.R.string.yes) { _, _ -> }
+                                .show()
                     }
                 }
             }

@@ -22,10 +22,12 @@ import com.etebase.client.SignedInvitation
 import com.etebase.client.Utils
 import com.etesync.syncadapter.R
 import com.etesync.syncadapter.syncadapter.requestSync
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.*
-import java.util.concurrent.Future
 
 
 class InvitationsListFragment : ListFragment(), AdapterView.OnItemClickListener {
@@ -124,54 +126,52 @@ class InvitationsListFragment : ListFragment(), AdapterView.OnItemClickListener 
 
 class InvitationsViewModel : ViewModel() {
     private val invitations = MutableLiveData<List<SignedInvitation>>()
-    private var asyncTask: Future<Unit>? = null
+    private var asyncTask: Job? = null
 
     fun loadInvitations(accountCollectionHolder: AccountHolder) {
-        asyncTask = doAsync {
-            val ret = LinkedList<SignedInvitation>()
-            val invitationManager = accountCollectionHolder.etebase.invitationManager
-            var iterator: String? = null
-            var done = false
-            while (!done) {
-                val chunk = invitationManager.listIncoming(FetchOptions().iterator(iterator).limit(30))
-                iterator = chunk.stoken
-                done = chunk.isDone
+        asyncTask = viewModelScope.launch {
+            val ret = withContext(Dispatchers.IO) {
+                val result = LinkedList<SignedInvitation>()
+                val invitationManager = accountCollectionHolder.etebase.invitationManager
+                var iterator: String? = null
+                var done = false
+                while (!done) {
+                    val chunk = invitationManager.listIncoming(FetchOptions().iterator(iterator).limit(30))
+                    iterator = chunk.stoken
+                    done = chunk.isDone
 
-                ret.addAll(chunk.data)
+                    result.addAll(chunk.data)
+                }
+                result
             }
-
-            uiThread {
-                invitations.value = ret
-            }
+            invitations.value = ret
         }
     }
 
     fun accept(accountCollectionHolder: AccountHolder, invitation: SignedInvitation) {
-        doAsync {
-            val invitationManager = accountCollectionHolder.etebase.invitationManager
-            invitationManager.accept(invitation)
-            val ret = invitations.value!!.filter { it != invitation }
-
-            uiThread {
-                invitations.value = ret
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val invitationManager = accountCollectionHolder.etebase.invitationManager
+                invitationManager.accept(invitation)
             }
+            val ret = invitations.value!!.filter { it != invitation }
+            invitations.value = ret
         }
     }
 
     fun reject(accountCollectionHolder: AccountHolder, invitation: SignedInvitation) {
-        doAsync {
-            val invitationManager = accountCollectionHolder.etebase.invitationManager
-            invitationManager.reject(invitation)
-            val ret = invitations.value!!.filter { it != invitation }
-
-            uiThread {
-                invitations.value = ret
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val invitationManager = accountCollectionHolder.etebase.invitationManager
+                invitationManager.reject(invitation)
             }
+            val ret = invitations.value!!.filter { it != invitation }
+            invitations.value = ret
         }
     }
 
     fun cancelLoad() {
-        asyncTask?.cancel(true)
+        asyncTask?.cancel()
     }
 
     fun observe(owner: LifecycleOwner, observer: (List<SignedInvitation>) -> Unit) =

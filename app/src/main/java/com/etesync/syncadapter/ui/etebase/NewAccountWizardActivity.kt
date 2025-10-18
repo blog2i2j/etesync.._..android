@@ -23,8 +23,10 @@ import com.etesync.syncadapter.Constants.*
 import com.etesync.syncadapter.R
 import com.etesync.syncadapter.syncadapter.requestSync
 import com.etesync.syncadapter.ui.BaseActivity
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class NewAccountWizardActivity : BaseActivity() {
     private lateinit var account: Account
@@ -105,23 +107,21 @@ class WizardCheckFragment : Fragment() {
     private fun checkAccountInit() {
         val colMgr = model.value?.colMgr ?: return
         loadingModel.setLoading(true)
-        doAsync {
+        lifecycleScope.launch {
             try {
-                val collections = colMgr.list(COLLECTION_TYPES, FetchOptions().limit(1))
-                uiThread {
-                    if (collections.data.size > 0) {
-                        activity?.finish()
-                    } else {
-                        parentFragmentManager.commit {
-                            replace(R.id.fragment_container, WizardFragment())
-                        }
+                val collections = withContext(Dispatchers.IO) {
+                    colMgr.list(COLLECTION_TYPES, FetchOptions().limit(1))
+                }
+                if (collections.data.size > 0) {
+                    activity?.finish()
+                } else {
+                    parentFragmentManager.commit {
+                        replace(R.id.fragment_container, WizardFragment())
                     }
                 }
             } catch (e: Exception) {
-                uiThread {
-                    reportErrorHelper(requireContext(), e)
-                    loadingModel.setLoading(false)
-                }
+                reportErrorHelper(requireContext(), e)
+                loadingModel.setLoading(false)
             }
         }
     }
@@ -170,32 +170,30 @@ class WizardFragment : Fragment() {
         val colMgr = accountHolder.colMgr
         loadingModel.setLoading(true)
 
-        doAsync {
+        lifecycleScope.launch {
             try {
-                val baseMeta = listOf(
-                    Pair(ETEBASE_TYPE_ADDRESS_BOOK, "My Contacts"),
-                    Pair(ETEBASE_TYPE_CALENDAR, "My Calendar"),
-                    Pair(ETEBASE_TYPE_TASKS, "My Tasks"),
-                )
+                withContext(Dispatchers.IO) {
+                    val baseMeta = listOf(
+                        Pair(ETEBASE_TYPE_ADDRESS_BOOK, "My Contacts"),
+                        Pair(ETEBASE_TYPE_CALENDAR, "My Calendar"),
+                        Pair(ETEBASE_TYPE_TASKS, "My Tasks"),
+                    )
 
-                baseMeta.forEach {
-                    val meta = ItemMetadata()
-                    meta.name = it.second
-                    meta.mtime = System.currentTimeMillis()
+                    baseMeta.forEach {
+                        val meta = ItemMetadata()
+                        meta.name = it.second
+                        meta.mtime = System.currentTimeMillis()
 
-                    val col = colMgr.create(it.first, meta, "")
-                    uploadCollection(accountHolder, col)
+                        val col = colMgr.create(it.first, meta, "")
+                        uploadCollection(accountHolder, col)
+                    }
+                    requestSync(requireContext(), accountHolder.account)
                 }
-                requestSync(requireContext(), accountHolder.account)
                 activity?.finish()
             } catch (e: EtebaseException) {
-                uiThread {
-                    reportErrorHelper(requireContext(), e)
-                }
+                reportErrorHelper(requireContext(), e)
             } finally {
-                uiThread {
-                    loadingModel.setLoading(false)
-                }
+                loadingModel.setLoading(false)
             }
         }
     }

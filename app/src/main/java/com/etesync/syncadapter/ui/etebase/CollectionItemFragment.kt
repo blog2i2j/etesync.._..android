@@ -29,13 +29,15 @@ import com.etesync.syncadapter.utils.EventEmailInvitation
 import com.etesync.syncadapter.utils.TaskProviderHandling
 import com.google.android.material.tabs.TabLayout
 import ezvcard.util.PartialDate
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.StringReader
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.Future
 
 class CollectionItemFragment : Fragment() {
     private val model: AccountViewModel by activityViewModels()
@@ -219,7 +221,7 @@ class TextFragment : Fragment() {
 }
 
 class PrettyFragment : Fragment() {
-    private var asyncTask: Future<Unit>? = null
+    private var asyncTask: Job? = null
     private lateinit var mainFragment: CollectionItemFragment
     private lateinit var cachedCollection: CachedCollection
     private lateinit var content: String
@@ -248,24 +250,26 @@ class PrettyFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         if (asyncTask != null)
-            asyncTask!!.cancel(true)
+            asyncTask!!.cancel()
     }
 
-    private fun loadEventTask(view: View): Future<Unit> {
-        return doAsync {
-            var event: Event? = null
-            val inputReader = StringReader(content)
+    private fun loadEventTask(view: View): Job {
+        return lifecycleScope.launch {
+            val event = withContext(Dispatchers.IO) {
+                var result: Event? = null
+                val inputReader = StringReader(content)
 
-            try {
-                event = Event.eventsFromReader(inputReader, null)[0]
-            } catch (e: InvalidCalendarException) {
-                e.printStackTrace()
-            } catch (e: IOException) {
-                e.printStackTrace()
+                try {
+                    result = Event.eventsFromReader(inputReader, null)[0]
+                } catch (e: InvalidCalendarException) {
+                    e.printStackTrace()
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+                result
             }
 
             if (event != null) {
-                uiThread {
                     val loader = view.findViewById<View>(R.id.event_info_loading_msg)
                     loader.visibility = View.GONE
                     val contentContainer = view.findViewById<View>(R.id.event_info_scroll_view)
@@ -323,27 +327,27 @@ class PrettyFragment : Fragment() {
                     if (event.attendees.isNotEmpty()) {
                         mainFragment.allowSendEmail(event, content)
                     }
-
-                }
             }
         }
     }
 
-    private fun loadTaskTask(view: View): Future<Unit> {
-        return doAsync {
-            var task: Task? = null
-            val inputReader = StringReader(content)
+    private fun loadTaskTask(view: View): Job {
+        return lifecycleScope.launch {
+            val task = withContext(Dispatchers.IO) {
+                var result: Task? = null
+                val inputReader = StringReader(content)
 
-            try {
-                task = Task.tasksFromReader(inputReader)[0]
-            } catch (e: InvalidCalendarException) {
-                e.printStackTrace()
-            } catch (e: IOException) {
-                e.printStackTrace()
+                try {
+                    result = Task.tasksFromReader(inputReader)[0]
+                } catch (e: InvalidCalendarException) {
+                    e.printStackTrace()
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+                result
             }
 
             if (task != null) {
-                uiThread {
                     val loader = view.findViewById<View>(R.id.task_info_loading_msg)
                     loader.visibility = View.GONE
                     val contentContainer = view.findViewById<View>(R.id.task_info_scroll_view)
@@ -363,24 +367,25 @@ class PrettyFragment : Fragment() {
                     }
 
                     setTextViewText(view, R.id.description, task.description)
-                }
             }
         }
     }
 
-    private fun loadContactTask(view: View): Future<Unit> {
-        return doAsync {
-            var contact: Contact? = null
-            val reader = StringReader(content)
+    private fun loadContactTask(view: View): Job {
+        return lifecycleScope.launch {
+            val contact = withContext(Dispatchers.IO) {
+                var result: Contact? = null
+                val reader = StringReader(content)
 
-            try {
-                contact = Contact.fromReader(reader, null)[0]
-            } catch (e: IOException) {
-                e.printStackTrace()
+                try {
+                    result = Contact.fromReader(reader, null)[0]
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+                result
             }
 
             if (contact != null) {
-                uiThread {
                     val loader = view.findViewById<View>(R.id.loading_msg)
                     loader.visibility = View.GONE
                     val contentContainer = view.findViewById<View>(R.id.content_container)
@@ -394,7 +399,6 @@ class PrettyFragment : Fragment() {
                     } else {
                         showContact(contact)
                     }
-                }
             }
         }
     }

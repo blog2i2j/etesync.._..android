@@ -32,13 +32,15 @@ import com.etesync.syncadapter.utils.EventEmailInvitation
 import com.etesync.syncadapter.utils.TaskProviderHandling
 import com.google.android.material.tabs.TabLayout
 import ezvcard.util.PartialDate
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.StringReader
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.Future
+import kotlinx.coroutines.Job
 
 class JournalItemActivity : BaseActivity(), Refreshable {
     private var journalEntity: JournalEntity? = null
@@ -212,7 +214,7 @@ class JournalItemActivity : BaseActivity(), Refreshable {
     class PrettyFragment : Fragment() {
         internal lateinit var info: CollectionInfo
         internal lateinit var syncEntry: SyncEntry
-        private var asyncTask: Future<Unit>? = null
+        private var asyncTask: Job? = null
 
         override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
             var v: View? = null
@@ -243,151 +245,154 @@ class JournalItemActivity : BaseActivity(), Refreshable {
         override fun onDestroyView() {
             super.onDestroyView()
             if (asyncTask != null)
-                asyncTask!!.cancel(true)
+                asyncTask!!.cancel()
         }
 
-        private fun loadEventTask(view: View): Future<Unit> {
-            return doAsync {
-                var event: Event? = null
-                val inputReader = StringReader(syncEntry.content)
+        private fun loadEventTask(view: View): Job {
+            return lifecycleScope.launch {
+                val event = withContext(Dispatchers.IO) {
+                    var event: Event? = null
+                    val inputReader = StringReader(syncEntry.content)
 
-                try {
-                    event = Event.eventsFromReader(inputReader, null)[0]
-                } catch (e: InvalidCalendarException) {
-                    e.printStackTrace()
-                } catch (e: IOException) {
-                    e.printStackTrace()
+                    try {
+                        event = Event.eventsFromReader(inputReader, null)[0]
+                    } catch (e: InvalidCalendarException) {
+                        e.printStackTrace()
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                    }
+                    event
                 }
 
                 if (event != null) {
-                    uiThread {
-                        val loader = view.findViewById<View>(R.id.event_info_loading_msg)
-                        loader.visibility = View.GONE
-                        val contentContainer = view.findViewById<View>(R.id.event_info_scroll_view)
-                        contentContainer.visibility = View.VISIBLE
+                    val loader = view.findViewById<View>(R.id.event_info_loading_msg)
+                    loader.visibility = View.GONE
+                    val contentContainer = view.findViewById<View>(R.id.event_info_scroll_view)
+                    contentContainer.visibility = View.VISIBLE
 
-                        setTextViewText(view, R.id.title, event.summary)
+                    setTextViewText(view, R.id.title, event.summary)
 
-                        val dtStart = event.dtStart?.date?.time
-                        val dtEnd = event.dtEnd?.date?.time
-                        if ((dtStart == null) || (dtEnd == null)) {
-                            setTextViewText(view, R.id.when_datetime, getString(R.string.loading_error_title))
+                    val dtStart = event.dtStart?.date?.time
+                    val dtEnd = event.dtEnd?.date?.time
+                    if ((dtStart == null) || (dtEnd == null)) {
+                        setTextViewText(view, R.id.when_datetime, getString(R.string.loading_error_title))
+                    } else {
+                        setTextViewText(view, R.id.when_datetime, getDisplayedDatetime(dtStart, dtEnd, event.isAllDay(), context))
+                    }
+
+                    setTextViewText(view, R.id.where, event.location)
+
+                    val organizer = event.organizer
+                    if (organizer != null) {
+                        val tv = view.findViewById<View>(R.id.organizer) as TextView
+                        tv.text = organizer.calAddress.toString().replaceFirst("mailto:".toRegex(), "")
+                    } else {
+                        val organizerView = view.findViewById<View>(R.id.organizer_container)
+                        organizerView.visibility = View.GONE
+                    }
+
+                    setTextViewText(view, R.id.description, event.description)
+
+                    var first = true
+                    var sb = StringBuilder()
+                    for (attendee in event.attendees) {
+                        if (first) {
+                            first = false
+                            sb.append(getString(R.string.journal_item_attendees)).append(": ")
                         } else {
-                            setTextViewText(view, R.id.when_datetime, getDisplayedDatetime(dtStart, dtEnd, event.isAllDay(), context))
+                            sb.append(", ")
                         }
+                        sb.append(attendee.calAddress.toString().replaceFirst("mailto:".toRegex(), ""))
+                    }
+                    setTextViewText(view, R.id.attendees, sb.toString())
 
-                        setTextViewText(view, R.id.where, event.location)
-
-                        val organizer = event.organizer
-                        if (organizer != null) {
-                            val tv = view.findViewById<View>(R.id.organizer) as TextView
-                            tv.text = organizer.calAddress.toString().replaceFirst("mailto:".toRegex(), "")
+                    first = true
+                    sb = StringBuilder()
+                    for (alarm in event.alarms) {
+                        if (first) {
+                            first = false
+                            sb.append(getString(R.string.journal_item_reminders)).append(": ")
                         } else {
-                            val organizerView = view.findViewById<View>(R.id.organizer_container)
-                            organizerView.visibility = View.GONE
+                            sb.append(", ")
                         }
+                        sb.append(alarm.trigger.value)
+                    }
+                    setTextViewText(view, R.id.reminders, sb.toString())
 
-                        setTextViewText(view, R.id.description, event.description)
-
-                        var first = true
-                        var sb = StringBuilder()
-                        for (attendee in event.attendees) {
-                            if (first) {
-                                first = false
-                                sb.append(getString(R.string.journal_item_attendees)).append(": ")
-                            } else {
-                                sb.append(", ")
-                            }
-                            sb.append(attendee.calAddress.toString().replaceFirst("mailto:".toRegex(), ""))
-                        }
-                        setTextViewText(view, R.id.attendees, sb.toString())
-
-                        first = true
-                        sb = StringBuilder()
-                        for (alarm in event.alarms) {
-                            if (first) {
-                                first = false
-                                sb.append(getString(R.string.journal_item_reminders)).append(": ")
-                            } else {
-                                sb.append(", ")
-                            }
-                            sb.append(alarm.trigger.value)
-                        }
-                        setTextViewText(view, R.id.reminders, sb.toString())
-
-                        if (event.attendees.isNotEmpty() && activity != null) {
-                            (activity as JournalItemActivity).allowSendEmail(event, syncEntry.content)
-                        }
+                    if (event.attendees.isNotEmpty() && activity != null) {
+                        (activity as JournalItemActivity).allowSendEmail(event, syncEntry.content)
                     }
                 }
             }
         }
 
-        private fun loadTaskTask(view: View): Future<Unit> {
-            return doAsync {
-                var task: Task? = null
-                val inputReader = StringReader(syncEntry.content)
+        private fun loadTaskTask(view: View): Job {
+            return lifecycleScope.launch {
+                val task = withContext(Dispatchers.IO) {
+                    var task: Task? = null
+                    val inputReader = StringReader(syncEntry.content)
 
-                try {
-                    task = Task.tasksFromReader(inputReader)[0]
-                } catch (e: InvalidCalendarException) {
-                    e.printStackTrace()
-                } catch (e: IOException) {
-                    e.printStackTrace()
+                    try {
+                        task = Task.tasksFromReader(inputReader)[0]
+                    } catch (e: InvalidCalendarException) {
+                        e.printStackTrace()
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                    }
+                    task
                 }
 
                 if (task != null) {
-                    uiThread {
-                        val loader = view.findViewById<View>(R.id.task_info_loading_msg)
-                        loader.visibility = View.GONE
-                        val contentContainer = view.findViewById<View>(R.id.task_info_scroll_view)
-                        contentContainer.visibility = View.VISIBLE
+                    val loader = view.findViewById<View>(R.id.task_info_loading_msg)
+                    loader.visibility = View.GONE
+                    val contentContainer = view.findViewById<View>(R.id.task_info_scroll_view)
+                    contentContainer.visibility = View.VISIBLE
 
-                        setTextViewText(view, R.id.title, task.summary)
+                    setTextViewText(view, R.id.title, task.summary)
 
-                        setTextViewText(view, R.id.where, task.location)
+                    setTextViewText(view, R.id.where, task.location)
 
-                        val organizer = task.organizer
-                        if (organizer != null) {
-                            val tv = view.findViewById<View>(R.id.organizer) as TextView
-                            tv.text = organizer.calAddress.toString().replaceFirst("mailto:".toRegex(), "")
-                        } else {
-                            val organizerView = view.findViewById<View>(R.id.organizer_container)
-                            organizerView.visibility = View.GONE
-                        }
-
-                        setTextViewText(view, R.id.description, task.description)
+                    val organizer = task.organizer
+                    if (organizer != null) {
+                        val tv = view.findViewById<View>(R.id.organizer) as TextView
+                        tv.text = organizer.calAddress.toString().replaceFirst("mailto:".toRegex(), "")
+                    } else {
+                        val organizerView = view.findViewById<View>(R.id.organizer_container)
+                        organizerView.visibility = View.GONE
                     }
+
+                    setTextViewText(view, R.id.description, task.description)
                 }
             }
         }
 
-        private fun loadContactTask(view: View): Future<Unit> {
-            return doAsync {
-                var contact: Contact? = null
-                val reader = StringReader(syncEntry.content)
+        private fun loadContactTask(view: View): Job {
+            return lifecycleScope.launch {
+                val contact = withContext(Dispatchers.IO) {
+                    var contact: Contact? = null
+                    val reader = StringReader(syncEntry.content)
 
-                try {
-                    contact = Contact.fromReader(reader, null)[0]
-                } catch (e: IOException) {
-                    e.printStackTrace()
+                    try {
+                        contact = Contact.fromReader(reader, null)[0]
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                    }
+                    contact
                 }
 
                 if (contact != null) {
-                    uiThread {
-                        val loader = view.findViewById<View>(R.id.loading_msg)
-                        loader.visibility = View.GONE
-                        val contentContainer = view.findViewById<View>(R.id.content_container)
-                        contentContainer.visibility = View.VISIBLE
+                    val loader = view.findViewById<View>(R.id.loading_msg)
+                    loader.visibility = View.GONE
+                    val contentContainer = view.findViewById<View>(R.id.content_container)
+                    contentContainer.visibility = View.VISIBLE
 
-                        val tv = view.findViewById<View>(R.id.display_name) as TextView
-                        tv.text = contact.displayName
+                    val tv = view.findViewById<View>(R.id.display_name) as TextView
+                    tv.text = contact.displayName
 
-                        if (contact.group) {
-                            showGroup(contact)
-                        } else {
-                            showContact(contact)
-                        }
+                    if (contact.group) {
+                        showGroup(contact)
+                    } else {
+                        showContact(contact)
                     }
                 }
             }

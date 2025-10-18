@@ -18,9 +18,11 @@ import com.etesync.syncadapter.model.JournalEntity
 import com.etesync.syncadapter.model.JournalModel
 import com.etesync.syncadapter.model.MyEntityDataStore
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
-import java.util.concurrent.Future
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CollectionMembersListFragment : ListFragment(), AdapterView.OnItemClickListener, Refreshable {
     private lateinit var data: MyEntityDataStore
@@ -28,7 +30,7 @@ class CollectionMembersListFragment : ListFragment(), AdapterView.OnItemClickLis
     private lateinit var info: CollectionInfo
     private lateinit var journalEntity: JournalEntity
     private var members: List<JournalManager.Member>? = null
-    private var asyncTask: Future<Unit>? = null
+    private var asyncTask: Job? = null
 
     private var emptyTextView: TextView? = null
 
@@ -50,22 +52,20 @@ class CollectionMembersListFragment : ListFragment(), AdapterView.OnItemClickLis
     }
 
     override fun refresh() {
-        asyncTask = doAsync {
+        asyncTask = lifecycleScope.launch {
             try {
-                val settings = AccountSettings(requireContext(), account)
-                val httpClient = HttpClient.Builder(context, settings).build().okHttpClient
-                val journalsManager = JournalManager(httpClient, settings.uri?.toHttpUrlOrNull()!!)
+                val membersList = withContext(Dispatchers.IO) {
+                    val settings = AccountSettings(requireContext(), account)
+                    val httpClient = HttpClient.Builder(context, settings).build().okHttpClient
+                    val journalsManager = JournalManager(httpClient, settings.uri?.toHttpUrlOrNull()!!)
 
-                val journal = JournalManager.Journal.fakeWithUid(journalEntity.uid)
-                members = journalsManager.listMembers(journal)
-
-                uiThread {
-                    setListAdapterMembers(members!!)
+                    val journal = JournalManager.Journal.fakeWithUid(journalEntity.uid)
+                    journalsManager.listMembers(journal)
                 }
+                members = membersList
+                setListAdapterMembers(membersList)
             } catch (e: Exception) {
-                uiThread {
-                    emptyTextView!!.text = e.localizedMessage
-                }
+                emptyTextView!!.text = e.localizedMessage
             }
         }
     }
@@ -100,7 +100,7 @@ class CollectionMembersListFragment : ListFragment(), AdapterView.OnItemClickLis
     override fun onDestroyView() {
         super.onDestroyView()
         if (asyncTask != null)
-            asyncTask!!.cancel(true)
+            asyncTask!!.cancel()
     }
 
     override fun onItemClick(parent: AdapterView<*>, view: View, position: Int, id: Long) {

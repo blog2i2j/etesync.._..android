@@ -9,13 +9,16 @@ import androidx.fragment.app.commit
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.observe
+import androidx.lifecycle.viewModelScope
 import com.etebase.client.CollectionManager
 import com.etebase.client.ItemMetadata
 import com.etesync.syncadapter.*
 import com.etesync.syncadapter.ui.BaseActivity
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class CollectionActivity() : BaseActivity() {
     private lateinit var account: Account
@@ -46,14 +49,14 @@ class CollectionActivity() : BaseActivity() {
                 }
             } else if (colType != null) {
                 model.observe(this) {
-                    doAsync {
-                        val meta = ItemMetadata()
-                        meta.name = ""
-                        val cachedCollection = CachedCollection(it.colMgr.create(colType, meta, ""), meta, colType)
-                        uiThread {
-                            supportFragmentManager.commit {
-                                replace(R.id.fragment_container, EditCollectionFragment.newInstance(cachedCollection, true))
-                            }
+                    lifecycleScope.launch {
+                        val cachedCollection = withContext(Dispatchers.IO) {
+                            val meta = ItemMetadata()
+                            meta.name = ""
+                            CachedCollection(it.colMgr.create(colType, meta, ""), meta, colType)
+                        }
+                        supportFragmentManager.commit {
+                            replace(R.id.fragment_container, EditCollectionFragment.newInstance(cachedCollection, true))
                         }
                     }
                 }
@@ -88,20 +91,21 @@ class AccountViewModel : ViewModel() {
     private val holder = MutableLiveData<AccountHolder>()
 
     fun loadAccount(context: Context, account: Account) {
-        doAsync {
-            val settings = AccountSettings(context, account)
-            val etebaseLocalCache = EtebaseLocalCache.getInstance(context, account.name)
-            val httpClient = HttpClient.Builder(context).setForeground(true).build().okHttpClient
-            val etebase = EtebaseLocalCache.getEtebase(context, httpClient, settings)
-            val colMgr = etebase.collectionManager
-            uiThread {
-                holder.value = AccountHolder(
+        viewModelScope.launch {
+            val accountHolder = withContext(Dispatchers.IO) {
+                val settings = AccountSettings(context, account)
+                val etebaseLocalCache = EtebaseLocalCache.getInstance(context, account.name)
+                val httpClient = HttpClient.Builder(context).setForeground(true).build().okHttpClient
+                val etebase = EtebaseLocalCache.getEtebase(context, httpClient, settings)
+                val colMgr = etebase.collectionManager
+                AccountHolder(
                         account,
                         etebaseLocalCache,
                         etebase,
                         colMgr
                 )
             }
+            holder.value = accountHolder
         }
     }
 
@@ -118,15 +122,15 @@ class CollectionViewModel : ViewModel() {
     private val collection = MutableLiveData<CachedCollection>()
 
     fun loadCollection(accountHolder: AccountHolder, colUid: String) {
-        doAsync {
-            val etebaseLocalCache = accountHolder.etebaseLocalCache
-            val colMgr = accountHolder.colMgr
-            val cachedCollection = synchronized(etebaseLocalCache) {
-                etebaseLocalCache.collectionGet(colMgr, colUid)!!
+        viewModelScope.launch {
+            val cachedCollection = withContext(Dispatchers.IO) {
+                val etebaseLocalCache = accountHolder.etebaseLocalCache
+                val colMgr = accountHolder.colMgr
+                synchronized(etebaseLocalCache) {
+                    etebaseLocalCache.collectionGet(colMgr, colUid)!!
+                }
             }
-            uiThread {
-                collection.value = cachedCollection
-            }
+            collection.value = cachedCollection
         }
     }
 
@@ -141,13 +145,13 @@ class ItemsViewModel : ViewModel() {
     private val cachedItems = MutableLiveData<List<CachedItem>>()
 
     fun loadItems(accountCollectionHolder: AccountHolder, cachedCollection: CachedCollection) {
-        doAsync {
-            val col = cachedCollection.col
-            val itemMgr = accountCollectionHolder.colMgr.getItemManager(col)
-            val items = accountCollectionHolder.etebaseLocalCache.itemList(itemMgr, col.uid, withDeleted = true)
-            uiThread {
-                cachedItems.value = items
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                val col = cachedCollection.col
+                val itemMgr = accountCollectionHolder.colMgr.getItemManager(col)
+                accountCollectionHolder.etebaseLocalCache.itemList(itemMgr, col.uid, withDeleted = true)
             }
+            cachedItems.value = items
         }
     }
 

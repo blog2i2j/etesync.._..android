@@ -22,10 +22,12 @@ import com.etesync.syncadapter.CachedCollection
 import com.etesync.syncadapter.CachedItem
 import com.etesync.syncadapter.R
 import com.etesync.syncadapter.ui.etebase.ListEntriesFragment.Companion.setItemView
-import org.jetbrains.anko.doAsync
-import org.jetbrains.anko.uiThread
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.*
-import java.util.concurrent.Future
 
 
 class ItemRevisionsListFragment : ListFragment(), AdapterView.OnItemClickListener {
@@ -127,31 +129,31 @@ class ItemRevisionsListFragment : ListFragment(), AdapterView.OnItemClickListene
 
 class RevisionsViewModel : ViewModel() {
     private val revisions = MutableLiveData<List<CachedItem>>()
-    private var asyncTask: Future<Unit>? = null
+    private var asyncTask: Job? = null
 
     fun loadRevisions(accountCollectionHolder: AccountHolder, cachedCollection: CachedCollection, cachedItem: CachedItem) {
-        asyncTask = doAsync {
-            val ret = LinkedList<CachedItem>()
-            val col = cachedCollection.col
-            val itemManager = accountCollectionHolder.colMgr.getItemManager(col)
-            var iterator: String? = null
-            var done = false
-            while (!done) {
-                val chunk = itemManager.itemRevisions(cachedItem.item, FetchOptions().iterator(iterator).limit(30))
-                iterator = chunk.iterator
-                done = chunk.isDone
+        asyncTask = viewModelScope.launch {
+            val ret = withContext(Dispatchers.IO) {
+                val result = LinkedList<CachedItem>()
+                val col = cachedCollection.col
+                val itemManager = accountCollectionHolder.colMgr.getItemManager(col)
+                var iterator: String? = null
+                var done = false
+                while (!done) {
+                    val chunk = itemManager.itemRevisions(cachedItem.item, FetchOptions().iterator(iterator).limit(30))
+                    iterator = chunk.iterator
+                    done = chunk.isDone
 
-                ret.addAll(chunk.data.map { CachedItem(it, it.meta, it.contentString) })
+                    result.addAll(chunk.data.map { CachedItem(it, it.meta, it.contentString) })
+                }
+                result
             }
-
-            uiThread {
-                revisions.value = ret
-            }
+            revisions.value = ret
         }
     }
 
     fun cancelLoad() {
-        asyncTask?.cancel(true)
+        asyncTask?.cancel()
     }
 
     fun observe(owner: LifecycleOwner, observer: (List<CachedItem>) -> Unit) =

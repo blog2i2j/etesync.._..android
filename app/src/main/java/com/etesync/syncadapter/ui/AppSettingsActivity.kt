@@ -22,7 +22,7 @@ import com.etesync.syncadapter.model.Settings
 import com.etesync.syncadapter.utils.HintManager
 import com.etesync.syncadapter.utils.LanguageUtils
 import com.google.android.material.snackbar.Snackbar
-import org.jetbrains.anko.defaultSharedPreferences
+import com.etesync.syncadapter.utils.defaultSharedPreferences
 import java.net.URI
 import java.net.URISyntaxException
 

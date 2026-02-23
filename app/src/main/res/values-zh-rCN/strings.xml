@@ -51,7 +51,7 @@
     <string name="app_settings_show_debug_info">显示调试信息</string>
     <string name="app_settings_show_debug_info_details">查看软件和配置信息</string>
     <!--AccountActivity-->
-    <string name="account_synchronize_now"> 立即同步</string>
+    <string name="account_synchronize_now">立即同步</string>
     <string name="account_synchronizing_now">正在同步</string>
     <string name="account_settings">账户设置</string>
     <string name="account_delete">删除账户</string>
@@ -71,20 +71,15 @@
     <string name="login_password">密码</string>
     <string name="login_password_required">请输入密码</string>
     <string name="login_back">返回</string>
-    <string name="login_configuration_detection">正在配置</string>
-    <string name="login_querying_server">正在与服务器通信，请稍等...</string>
     <string name="login_view_logs">查看日志</string>
     <!--AccountSettingsActivity-->
     <string name="settings_title">设置：%s</string>
-    <string name="settings_authentication">认证</string>
     <string name="settings_password">密码</string>
     <string name="settings_enter_password">输入你的密码：</string>
     <string name="settings_sync">同步</string>
-    <string name="settings_sync_interval_contacts">通讯录自动同步间隔</string>
     <string name="settings_sync_summary_manually">手动同步</string>
     <string name="settings_sync_summary_periodically" tools:ignore="PluralsCandidate">%s 钟或本地修改后</string>
     <string name="settings_sync_summary_not_available">不可用</string>
-    <string name="settings_sync_interval_calendars">日历自动同步间隔</string>
     <string-array name="settings_sync_interval_names">
         <item>手动同步</item>
         <item>每 15 分钟</item>
@@ -123,5 +118,4 @@
     <string name="sync_error">%s时错误</string>
     <string name="sync_error_http_dav">%s时服务器错误</string>
     <string name="sync_error_local_storage">%s时数据库错误</string>
-    <!--cert4android-->
 </resources>

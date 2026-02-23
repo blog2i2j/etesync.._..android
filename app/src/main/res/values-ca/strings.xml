@@ -1,19 +1,5 @@
-<?xml version='1.0' encoding='UTF-8'?>
-<resources>
-  <!--common strings-->
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--common strings-->
   <string name="help">Ajuda</string>
-  <!--startup dialogs-->
-  <!--AboutActivity-->
-  <!--global settings-->
-  <!--AccountsActivity-->
-  <!--AccountUpdateService-->
-  <!--AppSettingsActivity-->
-  <!--AccountActivity-->
-  <!--PermissionsActivity-->
-  <!--AddAccountActivity-->
-  <!--AccountSettingsActivity-->
-  <!--collection management-->
-  <!--ExceptionInfoFragment-->
-  <!--sync errors and DebugInfoActivity-->
-  <!--cert4android-->
 </resources>

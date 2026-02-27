@@ -1,6 +1,9 @@
 # Changelog
 *NOTE:* may be removed in the future in favor of the fastlane changelog.
 
+## Version 2.7.0
+* Updated translations.
+
 ## Version 2.6.0
 * Drop anko (deprecated) and the appodeal repo (not allowed on F-Droid)
 
